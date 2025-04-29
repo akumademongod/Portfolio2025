@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple To-Do List</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        /* Apply Inter font globally */
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        /* Style for completed tasks */
+        .completed {
+            text-decoration: line-through;
+            color: #9ca3af; /* gray-400 */
+        }
+        /* Add some transition for smoother UI updates */
+        li {
+            transition: all 0.3s ease;
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-blue-100 to-purple-100 min-h-screen flex items-center justify-center p-4">
+
+    <div class="bg-white p-6 md:p-8 rounded-xl shadow-lg w-full max-w-md">
+        <h1 class="text-2xl md:text-3xl font-bold mb-6 text-center text-gray-800">My To-Do List</h1>
+
+        <div class="flex mb-4 space-x-2">
+            <input
+                type="text"
+                id="taskInput"
+                placeholder="Add a new task..."
+                aria-label="New task input"
+                class="flex-grow p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition duration-200"
+            />
+            <button
+                id="addTaskBtn"
+                class="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3 px-5 rounded-lg transition duration-200 shadow active:scale-95"
+            >
+                Add
+            </button>
+        </div>
+
+        <ul id="taskList" class="space-y-3">
+            </ul>
+
+         <p id="messageArea" class="text-center text-gray-500 mt-4 h-5"></p>
+
+    </div>
+
+    <script>
+        // --- DOM Elements ---
+        const taskInput = document.getElementById('taskInput');
+        const addTaskBtn = document.getElementById('addTaskBtn');
+        const taskList = document.getElementById('taskList');
+        const messageArea = document.getElementById('messageArea'); // For feedback
+
+        // --- Functions ---
+
+        /**
+         * Displays a temporary message to the user.
+         * @param {string} message - The message to display.
+         * @param {boolean} isError - If true, styles the message as an error.
+         */
+        function showMessage(message, isError = false) {
+            messageArea.textContent = message;
+            messageArea.className = `text-center mt-4 h-5 ${isError ? 'text-red-500' : 'text-green-600'}`;
+            // Clear the message after a few seconds
+            setTimeout(() => {
+                messageArea.textContent = '';
+                messageArea.className = 'text-center text-gray-500 mt-4 h-5'; // Reset class
+            }, 3000); // Hide after 3 seconds
+        }
+
+        /**
+         * Creates and adds a new task item to the list.
+         * @param {string} taskText - The text content of the task.
+         */
+        function addTask(taskText) {
+            if (!taskText) {
+                showMessage('Task cannot be empty!', true);
+                return; // Exit if input is empty
+            }
+
+            // Create list item elements
+            const li = document.createElement('li');
+            li.className = 'flex items-center justify-between bg-gray-50 hover:bg-gray-100 p-3 rounded-lg shadow-sm transition duration-200';
+
+            const span = document.createElement('span');
+            span.textContent = taskText;
+            span.className = 'flex-grow cursor-pointer mr-3 break-words'; // Allow long words to break
+
+            const deleteBtn = document.createElement('button');
+            deleteBtn.textContent = 'Delete';
+            deleteBtn.className = 'bg-red-500 hover:bg-red-600 text-white text-sm font-semibold ml-3 px-3 py-1 rounded-md transition duration-200 active:scale-95 flex-shrink-0'; // Prevent button from shrinking too much
+
+            // Append elements
+            li.appendChild(span);
+            li.appendChild(deleteBtn);
+            taskList.appendChild(li);
+
+            // Add event listener for marking task as complete/incomplete
+            span.addEventListener('click', () => {
+                li.classList.toggle('completed'); // Toggle the 'completed' class for styling
+                span.classList.toggle('line-through'); // More explicit line-through toggle
+                span.classList.toggle('text-gray-400'); // Dim completed text
+            });
+
+            // Add event listener for deleting the task
+            deleteBtn.addEventListener('click', () => {
+                // Optional: Add a fade-out effect
+                li.style.opacity = '0';
+                li.style.transform = 'translateX(20px)';
+                setTimeout(() => {
+                    taskList.removeChild(li);
+                    showMessage('Task removed.');
+                }, 300); // Remove after transition
+            });
+
+            // Clear the input field and show success message
+            taskInput.value = '';
+            showMessage('Task added successfully!');
+            taskInput.focus(); // Keep focus on input for easy adding
+        }
+
+        // --- Event Listeners ---
+
+        // Add task when the button is clicked
+        addTaskBtn.addEventListener('click', () => {
+            const taskText = taskInput.value.trim(); // Trim whitespace
+            addTask(taskText);
+        });
+
+        // Add task when Enter key is pressed in the input field
+        taskInput.addEventListener('keypress', (event) => {
+            if (event.key === 'Enter') {
+                const taskText = taskInput.value.trim();
+                addTask(taskText);
+            }
+        });
+
+        // --- Initial Setup ---
+        // You could potentially load tasks from localStorage here if desired
+        showMessage("Add your first task!"); // Initial prompt
+
+    </script>
+
+</body>
+</html>

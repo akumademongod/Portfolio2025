@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive 3D Biology Diagram V2</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <style>
+        /* Basic styling */
+        body { margin: 0; overflow: hidden; font-family: 'Inter', sans-serif; background-color: #1f2937; /* Dark background fallback */ }
+        #canvas-container {
+            width: 100%;
+            height: 100vh;
+            position: fixed; /* Keep canvas fixed */
+            top: 0;
+            left: 0;
+            z-index: 0; /* Behind UI */
+        }
+        canvas { display: block; }
+
+        /* UI Overlay Container */
+        #ui-container {
+            position: relative; /* Change to relative to allow stacking */
+            z-index: 10; /* Ensure UI is above canvas */
+            width: 100%;
+            min-height: 100vh; /* Ensure it covers viewport height */
+            pointer-events: none; /* Allow clicks to pass through empty areas */
+            display: flex;
+            flex-direction: column; /* Stack UI vertically */
+            justify-content: space-between; /* Push elements apart */
+            padding: 1.5rem; /* Increased padding */
+        }
+
+        /* Top Row for Buttons and Info Panel */
+        #top-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            width: 100%;
+            pointer-events: none; /* Pass clicks through */
+        }
+
+        #info-panel, #navigation-buttons {
+            pointer-events: auto; /* Enable pointer events for UI elements */
+            background-color: rgba(31, 41, 55, 0.85); /* Darker semi-transparent (gray-800) */
+            backdrop-filter: blur(5px); /* Frosted glass effect */
+            color: #e5e7eb; /* Light gray text */
+            padding: 1rem 1.5rem; /* More padding */
+            border-radius: 0.75rem; /* More rounded */
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2); /* Softer shadow */
+            border: 1px solid rgba(75, 85, 99, 0.5); /* Subtle border (gray-600) */
+            max-width: 320px;
+            max-height: 75vh;
+            overflow-y: auto;
+        }
+        #info-panel h2 { color: #f9fafb; } /* White heading */
+        #info-panel strong { color: #93c5fd; } /* Light blue for emphasis */
+
+         #navigation-buttons {
+             display: flex;
+             flex-direction: column;
+             gap: 0.75rem; /* Increased gap */
+         }
+         #navigation-buttons button {
+             transition: background-color 0.3s ease, transform 0.1s ease;
+             border: 1px solid transparent; /* Placeholder for hover effect */
+             text-align: left;
+             width: 100%;
+             font-weight: 500; /* Medium weight */
+         }
+         #navigation-buttons button:hover {
+             transform: scale(1.03); /* Slight scale on hover */
+             border-color: rgba(255, 255, 255, 0.3);
+         }
+         /* Style for active button */
+        .active-button {
+            background-color: #3b82f6 !important; /* Tailwind blue-500 */
+            color: white !important;
+            font-weight: 600; /* Semibold */
+            box-shadow: 0 2px 5px rgba(59, 130, 246, 0.4);
+        }
+
+        /* Caption Area at the bottom */
+        #caption-area {
+            pointer-events: auto; /* Allow interaction if needed */
+            width: fit-content; /* Adjust width to content */
+            max-width: 80%; /* Limit max width */
+            margin: 0 auto; /* Center horizontally */
+            padding: 0.75rem 1.5rem;
+            background-color: rgba(31, 41, 55, 0.85); /* Darker semi-transparent */
+            backdrop-filter: blur(5px);
+            color: #d1d5db; /* gray-300 */
+            border-radius: 0.75rem;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            border: 1px solid rgba(75, 85, 99, 0.5);
+            text-align: center;
+            font-size: 0.9rem;
+            /* Initially hidden, shown via JS */
+            visibility: hidden;
+            opacity: 0;
+            transition: opacity 0.5s ease, visibility 0.5s ease;
+        }
+        #caption-area.visible {
+            visibility: visible;
+            opacity: 1;
+        }
+
+        /* Mobile responsiveness */
+        @media (max-width: 768px) {
+            #ui-container { padding: 1rem; }
+            #top-row {
+                flex-direction: column; /* Stack buttons and info panel */
+                align-items: center; /* Center items */
+            }
+            #navigation-buttons {
+                flex-direction: row; /* Buttons side-by-side */
+                order: 2; /* Place buttons below info panel */
+                margin-top: 1rem;
+                flex-wrap: wrap;
+                justify-content: center;
+                gap: 0.5rem;
+                background-color: transparent; /* Remove background */
+                backdrop-filter: none;
+                border: none;
+                box-shadow: none;
+                padding: 0;
+                max-width: 100%;
+            }
+             #navigation-buttons button {
+                 width: auto; /* Adjust button width */
+                 padding: 0.5rem 1rem;
+             }
+            #info-panel {
+                order: 1; /* Info panel above buttons */
+                max-width: 95%;
+                max-height: 45vh;
+                margin-top: 0; /* Remove top margin */
+            }
+             #caption-area {
+                 max-width: 90%;
+                 font-size: 0.8rem;
+                 padding: 0.5rem 1rem;
+                 margin-bottom: 1rem; /* Add some space from bottom */
+             }
+        }
+    </style>
+</head>
+<body class="text-gray-200"> <div id="canvas-container"></div>
+
+    <div id="ui-container">
+        <div id="top-row">
+            <div id="navigation-buttons">
+                 <button id="btn-dna" class="bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded">
+                    View DNA
+                </button>
+                <button id="btn-rna" class="bg-emerald-600 hover:bg-emerald-700 text-white py-2 px-4 rounded">
+                    View RNA
+                </button>
+                <button id="btn-prion" class="bg-rose-600 hover:bg-rose-700 text-white py-2 px-4 rounded">
+                    View Prions
+                </button>
+                 <button id="btn-central-dogma" class="bg-violet-600 hover:bg-violet-700 text-white py-2 px-4 rounded">
+                    Central Dogma
+                </button>
+            </div>
+
+            <div id="info-panel" class="prose prose-invert max-w-none"> <h2 id="info-title" class="text-xl font-semibold mb-3 text-gray-100">Welcome!</h2>
+                <div id="info-content" class="text-gray-300"> Select a molecule type using the buttons to learn more. Use your mouse/touch to rotate (click/touch & drag), zoom (scroll/pinch), and pan (right-click & drag / two-finger drag).
+                </div>
+            </div>
+        </div>
+
+        <div id="caption-area">
+            <p id="caption-text">Select a view</p>
+        </div>
+    </div>
+
+    <script>
+        // --- Global Variables ---
+        let scene, camera, renderer, controls;
+        let dnaModel, rnaModel, prionNormalModel, prionMisfoldedModel;
+        let currentView = null;
+        const captionElement = document.getElementById('caption-area'); // Get caption element
+
+        // --- Info Panel Content (Same as before) ---
+        const infoContent = {
+             welcome: { title: "Welcome!", content: "Select a molecule type using the buttons to learn more. Use your mouse/touch to rotate (click/touch & drag), zoom (scroll/pinch), and pan (right-click & drag / two-finger drag)." },
+             dna: { title: "DNA (Deoxyribonucleic Acid)", content: `<p><strong>Function:</strong> Stores the genetic instructions for the development, functioning, growth and reproduction of all known organisms.</p><p><strong>Structure:</strong> A double helix made of two polynucleotide chains. Each nucleotide consists of a deoxyribose sugar, a phosphate group, and one of four nitrogenous bases: Adenine (A), Thymine (T), Cytosine (C), and Guanine (G).</p><p><strong>Base Pairing:</strong> A always pairs with T (2 hydrogen bonds), and C always pairs with G (3 hydrogen bonds).</p><p><strong>Location:</strong> Primarily found in the nucleus of eukaryotic cells.</p><p><strong>Key Feature:</strong> The sequence of bases encodes genetic information.</p>` },
+             rna: { title: "RNA (Ribonucleic Acid)", content: `<p><strong>Function:</strong> Various roles in coding, decoding, regulation, and expression of genes. Key types include mRNA, tRNA, and rRNA.</p><p><strong>Structure:</strong> Typically a single polynucleotide strand. Each nucleotide consists of a ribose sugar, a phosphate group, and one of four nitrogenous bases: Adenine (A), Uracil (U), Cytosine (C), and Guanine (G).</p><p><strong>Key Differences from DNA:</strong> Single-stranded, contains Ribose sugar (instead of Deoxyribose), and uses Uracil (U) instead of Thymine (T).</p><p><strong>Location:</strong> Found in both the nucleus and cytoplasm.</p>` },
+             prion: { title: "Prions (Proteinaceous Infectious Particles)", content: `<p><strong>What they are:</strong> Misfolded proteins that can transmit their misfolded shape onto normal variants of the same protein. They contain no genetic material (DNA or RNA).</p><p><strong>Normal Form (PrP<sup>C</sup>):</strong> The normally folded protein, found in many tissues. Its exact function is not fully understood but may involve cell signaling or protection.</p><p><strong>Misfolded Form (PrP<sup>Sc</sup>):</strong> The infectious, disease-causing form. It has a different 3D structure (more beta-sheets) compared to PrP<sup>C</sup> (more alpha-helices).</p><p><strong>Mechanism:</strong> PrP<sup>Sc</sup> induces PrP<sup>C</sup> to change its conformation to PrP<sup>Sc</sup>, leading to aggregation and cell damage, particularly in the brain.</p><p><strong>Diseases:</strong> Cause neurodegenerative diseases like Creutzfeldt-Jakob Disease (CJD) in humans, Mad Cow Disease (BSE) in cattle, and Scrapie in sheep.</p>` },
+             'central-dogma': { title: "The Central Dogma of Molecular Biology", content: `<p>Describes the two-step process, transcription and translation, by which the information in genes flows into proteins: <strong>DNA → RNA → Protein</strong>.</p><p><strong>1. Transcription:</strong> The process where the genetic information stored in DNA is copied into a complementary strand of messenger RNA (mRNA). This occurs in the nucleus (in eukaryotes).</p><p><strong>2. Translation:</strong> The process where the genetic code carried by mRNA is decoded to produce a specific sequence of amino acids in a polypeptide chain (protein). This occurs in the cytoplasm on ribosomes.</p><p>This flow of information is fundamental to life, dictating cell structure and function.</p><p><em>(This view shows both DNA and RNA models to illustrate their relationship).</em></p>` }
+        };
+
+        // --- Caption Content ---
+        const captionContent = {
+            dna: "A 3D representation of the DNA double helix structure.",
+            rna: "A 3D representation of a single-stranded RNA molecule.",
+            prion: "Comparison: Normal Prion Protein (PrP<sup>C</sup>, left) and Misfolded Prion (PrP<sup>Sc</sup>, right).",
+            'central-dogma': "Visualizing the relationship: DNA (left) serves as the template for RNA (right).",
+            welcome: "Interactive 3D Biology Explorer" // Default caption
+        };
+
+
+        // --- Initialization ---
+        function init() {
+            const container = document.getElementById('canvas-container');
+
+            // Scene
+            scene = new THREE.Scene();
+            // Gradient Background using CSS
+            document.body.style.background = 'linear-gradient(to bottom, #1f2937, #374151)'; // gray-800 to gray-700
+
+            // Camera
+            camera = new THREE.PerspectiveCamera(60, container.clientWidth / container.clientHeight, 0.1, 1000); // Slightly narrower FOV
+            camera.position.set(0, 2, 18); // Adjusted initial position
+
+            // Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true }); // Alpha true for potential transparency
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.outputEncoding = THREE.sRGBEncoding; // For better color accuracy with standard materials
+            renderer.shadowMap.enabled = true; // Enable shadows
+            container.appendChild(renderer.domElement);
+
+            // Lighting (Adjusted for StandardMaterial)
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.5); // Less intense ambient
+            scene.add(ambientLight);
+
+            const keyLight = new THREE.DirectionalLight(0xffffff, 0.8); // Main light source
+            keyLight.position.set(-5, 5, 10);
+            keyLight.castShadow = true; // Enable shadow casting
+            scene.add(keyLight);
+
+            const fillLight = new THREE.DirectionalLight(0xffffff, 0.4); // Softer fill light
+            fillLight.position.set(5, 0, -5);
+            scene.add(fillLight);
+
+            // Controls
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05; // Smoother damping
+            controls.screenSpacePanning = false;
+            controls.minDistance = 4; // Adjusted min distance
+            controls.maxDistance = 60; // Adjusted max distance
+            controls.target.set(0, 1, 0); // Aim camera slightly higher
+
+            // Create Models (using StandardMaterial)
+            dnaModel = createDnaModel();
+            dnaModel.visible = false;
+            dnaModel.castShadow = true; // Enable shadows for models
+            dnaModel.receiveShadow = true;
+            scene.add(dnaModel);
+
+            rnaModel = createRnaModel();
+            rnaModel.visible = false;
+            rnaModel.castShadow = true;
+            rnaModel.receiveShadow = true;
+            scene.add(rnaModel);
+
+            prionNormalModel = createPrionModel(true);
+            prionNormalModel.position.x = -3.5; // Slightly more separation
+             prionNormalModel.position.y = 1; // Raise prions slightly
+            prionNormalModel.visible = false;
+            prionNormalModel.castShadow = true;
+            prionNormalModel.receiveShadow = true;
+            scene.add(prionNormalModel);
+
+            prionMisfoldedModel = createPrionModel(false);
+            prionMisfoldedModel.position.x = 3.5;
+             prionMisfoldedModel.position.y = 1;
+            prionMisfoldedModel.visible = false;
+            prionMisfoldedModel.castShadow = true;
+            prionMisfoldedModel.receiveShadow = true;
+            scene.add(prionMisfoldedModel);
+
+            // Event Listeners
+            document.getElementById('btn-dna').addEventListener('click', () => showView('dna'));
+            document.getElementById('btn-rna').addEventListener('click', () => showView('rna'));
+            document.getElementById('btn-prion').addEventListener('click', () => showView('prion'));
+            document.getElementById('btn-central-dogma').addEventListener('click', () => showView('central-dogma'));
+
+            window.addEventListener('resize', onWindowResize, false);
+
+            // Start Animation Loop
+            animate();
+
+            // Initial UI state
+            updateInfoPanel('welcome');
+            updateCaption('welcome'); // Show default caption
+            captionElement.classList.add('visible'); // Make caption area visible by default
+            setActiveButton(null);
+        }
+
+        // --- Model Creation Functions (Updated to use MeshStandardMaterial) ---
+
+        function createDnaModel() {
+            const group = new THREE.Group();
+            const radius = 2;
+            const tubeRadius = 0.2;
+            const radialSegments = 10; // Smoother tubes
+            const tubularSegments = 128; // More segments for smoother curve
+            const height = 10;
+            const turns = 3;
+
+            const colors = { A: 0x66bb6a, T: 0xef5350, C: 0x42a5f5, G: 0xffca28 }; // Material Design colors (lighter)
+
+            const curve1 = new THREE.CatmullRomCurve3( /* ... same points as before ... */
+                 Array.from({ length: tubularSegments }, (_, i) => { const t = i / (tubularSegments - 1); const angle = 2 * Math.PI * turns * t; const y = height * (t - 0.5); return new THREE.Vector3( radius * Math.cos(angle), y, radius * Math.sin(angle) ); })
+             );
+            const curve2 = new THREE.CatmullRomCurve3( /* ... same points as before ... */
+                 Array.from({ length: tubularSegments }, (_, i) => { const t = i / (tubularSegments - 1); const angle = 2 * Math.PI * turns * t + Math.PI; const y = height * (t - 0.5); return new THREE.Vector3( radius * Math.cos(angle), y, radius * Math.sin(angle) ); })
+             );
+
+            // Use MeshStandardMaterial
+            const backboneMaterial = new THREE.MeshStandardMaterial({ color: 0x9e9e9e, roughness: 0.6, metalness: 0.1 }); // Grey, slightly rough
+            const backboneGeom1 = new THREE.TubeGeometry(curve1, tubularSegments, tubeRadius, radialSegments, false);
+            const backboneMesh1 = new THREE.Mesh(backboneGeom1, backboneMaterial);
+            backboneMesh1.castShadow = true; backboneMesh1.receiveShadow = true;
+            group.add(backboneMesh1);
+
+            const backboneGeom2 = new THREE.TubeGeometry(curve2, tubularSegments, tubeRadius, radialSegments, false);
+            const backboneMesh2 = new THREE.Mesh(backboneGeom2, backboneMaterial);
+            backboneMesh2.castShadow = true; backboneMesh2.receiveShadow = true;
+            group.add(backboneMesh2);
+
+            const numBasePairs = Math.floor(tubularSegments / 5); // Adjusted density
+            for (let i = 0; i < numBasePairs; i++) {
+                const t = (i / numBasePairs) * 0.9 + 0.05;
+                const point1 = curve1.getPointAt(t);
+                const point2 = curve2.getPointAt(t);
+                const baseTypeIndex = Math.floor(Math.random() * 2);
+                let color1, color2;
+                 if (baseTypeIndex === 0) { color1 = colors.A; color2 = colors.T; } else { color1 = colors.C; color2 = colors.G; }
+                 if (Math.random() > 0.5) [color1, color2] = [color2, color1];
+
+                const midPoint = new THREE.Vector3().lerpVectors(point1, point2, 0.5);
+                // Use MeshStandardMaterial for bases too
+                const baseMaterial1 = new THREE.MeshStandardMaterial({ color: color1, roughness: 0.8, metalness: 0.0 });
+                const baseMaterial2 = new THREE.MeshStandardMaterial({ color: color2, roughness: 0.8, metalness: 0.0 });
+                const baseGeom = new THREE.CylinderGeometry(tubeRadius * 1.1, tubeRadius * 1.1, point1.distanceTo(midPoint), 8); // Slightly thinner
+                baseGeom.rotateX(Math.PI / 2);
+
+                const baseMesh1 = new THREE.Mesh(baseGeom, baseMaterial1);
+                baseMesh1.position.copy(new THREE.Vector3().lerpVectors(point1, midPoint, 0.5));
+                baseMesh1.lookAt(point2); // Look towards the other point for better alignment
+                 baseMesh1.castShadow = true;
+                group.add(baseMesh1);
+
+                const baseMesh2 = new THREE.Mesh(baseGeom.clone(), baseMaterial2);
+                baseMesh2.position.copy(new THREE.Vector3().lerpVectors(point2, midPoint, 0.5));
+                baseMesh2.lookAt(point1); // Look towards the other point
+                 baseMesh2.castShadow = true;
+                group.add(baseMesh2);
+            }
+            group.position.y = 0.5; // Center vertically slightly better
+            return group;
+        }
+
+        function createRnaModel() {
+            const group = new THREE.Group();
+            const radius = 1.5;
+            const tubeRadius = 0.2;
+            const radialSegments = 10;
+            const tubularSegments = 128;
+            const height = 10;
+            const turns = 2.5; // Fewer turns for visual difference
+
+            const colors = { A: 0x66bb6a, U: 0xffa726, C: 0x42a5f5, G: 0xffca28 }; // Orange for Uracil
+            const bases = ['A', 'U', 'C', 'G'];
+
+            const curve = new THREE.CatmullRomCurve3( /* ... same points calculation with wobble ... */
+                 Array.from({ length: tubularSegments }, (_, i) => { const t = i / (tubularSegments - 1); const angle = 2 * Math.PI * turns * t; const y = height * (t - 0.5); const wobble = Math.sin(t * Math.PI * 6) * 0.6; return new THREE.Vector3( (radius + wobble) * Math.cos(angle), y, (radius + wobble) * Math.sin(angle) ); })
+             );
+
+            // Use MeshStandardMaterial
+            const backboneMaterial = new THREE.MeshStandardMaterial({ color: 0x26a69a, roughness: 0.5, metalness: 0.1 }); // Teal color
+            const backboneGeom = new THREE.TubeGeometry(curve, tubularSegments, tubeRadius, radialSegments, false);
+            const backboneMesh = new THREE.Mesh(backboneGeom, backboneMaterial);
+            backboneMesh.castShadow = true; backboneMesh.receiveShadow = true;
+            group.add(backboneMesh);
+
+            const numBases = Math.floor(tubularSegments / 4); // Adjusted density
+            for (let i = 0; i < numBases; i++) {
+                const t = (i / numBases) * 0.9 + 0.05;
+                const point = curve.getPointAt(t);
+                const tangent = curve.getTangentAt(t).normalize();
+                 // Improved normal calculation for less predictable base orientation
+                const binormal = new THREE.Vector3(Math.sin(t*20)*0.5, Math.cos(t*15)*0.5, Math.sin(t*10)).normalize();
+                const normal = binormal.cross(tangent).normalize();
+
+
+                const baseType = bases[Math.floor(Math.random() * bases.length)];
+                const baseColor = colors[baseType];
+
+                // Use MeshStandardMaterial
+                const baseMaterial = new THREE.MeshStandardMaterial({ color: baseColor, roughness: 0.8, metalness: 0.0 });
+                const baseGeom = new THREE.SphereGeometry(tubeRadius * 1.6, 10, 10); // Slightly smaller sphere
+                const baseMesh = new THREE.Mesh(baseGeom, baseMaterial);
+                baseMesh.position.copy(point).addScaledVector(normal, tubeRadius * 2.8); // Position further out
+                 baseMesh.castShadow = true;
+                group.add(baseMesh);
+            }
+             group.position.y = 0.5; // Center vertically
+            return group;
+        }
+
+        function createPrionModel(isNormal) {
+            const geometry = new THREE.IcosahedronGeometry(isNormal ? 1.8 : 2.0, isNormal ? 2 : 1); // Normal slightly smaller, more detailed
+            const color = isNormal ? 0x81c784 : 0xe57373; // Lighter Green/Red
+             // Use MeshStandardMaterial
+            const material = new THREE.MeshStandardMaterial({
+                color: color,
+                roughness: isNormal ? 0.4 : 0.8, // Normal is smoother
+                metalness: 0.1,
+                flatShading: !isNormal, // Misfolded looks more jagged
+                wireframe: false // Remove wireframe for cleaner look
+             });
+            const mesh = new THREE.Mesh(geometry, material);
+             mesh.castShadow = true;
+             mesh.receiveShadow = true;
+            return mesh;
+        }
+
+
+        // --- View Management ---
+        function showView(viewType) {
+            // Hide all models first
+            dnaModel.visible = false;
+            rnaModel.visible = false;
+            prionNormalModel.visible = false;
+            prionMisfoldedModel.visible = false;
+
+            // Reset camera (optional, could keep position)
+            // controls.reset();
+            // camera.position.set(0, 2, 18);
+
+
+            // Show the relevant model(s) and set positions
+            if (viewType === 'dna') {
+                dnaModel.position.set(0, 0.5, 0); // Reset position
+                dnaModel.visible = true;
+                currentView = 'dna';
+                camera.position.set(0, 2, 18); // Consistent zoom
+            } else if (viewType === 'rna') {
+                rnaModel.position.set(0, 0.5, 0); // Reset position
+                rnaModel.visible = true;
+                currentView = 'rna';
+                 camera.position.set(0, 2, 18);
+            } else if (viewType === 'prion') {
+                prionNormalModel.visible = true;
+                prionMisfoldedModel.visible = true;
+                // Positions set during init
+                currentView = 'prion';
+                camera.position.set(0, 2, 22); // Zoom out for prions
+            } else if (viewType === 'central-dogma') {
+                dnaModel.visible = true;
+                rnaModel.visible = true;
+                dnaModel.position.set(-5, 0.5, 0); // Position side-by-side
+                rnaModel.position.set(5, 0.5, 0);
+                currentView = 'central-dogma';
+                camera.position.set(0, 2, 28); // Zoom out more
+            } else {
+                 currentView = null;
+            }
+
+            // Update the info panel and caption
+            updateInfoPanel(viewType);
+            updateCaption(viewType);
+            setActiveButton(viewType);
+
+            controls.update(); // Apply camera changes
+            controls.target.set(0, 1, 0); // Re-center target
+        }
+
+        // --- UI Updates ---
+        function updateInfoPanel(contentType) {
+            const titleElement = document.getElementById('info-title');
+            const contentElement = document.getElementById('info-content');
+            const data = infoContent[contentType] || infoContent.welcome;
+
+            titleElement.textContent = data.title;
+            contentElement.innerHTML = data.content;
+        }
+
+        function updateCaption(contentType) {
+            const captionTextElement = document.getElementById('caption-text');
+            const text = captionContent[contentType] || ""; // Get caption text
+
+            if (text && contentType !== 'welcome') {
+                 captionTextElement.innerHTML = text; // Use innerHTML for potential tags like sup
+                 captionElement.classList.add('visible');
+            } else {
+                 // Hide caption or show default for welcome screen if desired
+                 // captionElement.classList.remove('visible');
+                 captionTextElement.innerHTML = captionContent.welcome; // Show default welcome caption
+                 captionElement.classList.add('visible');
+            }
+        }
+
+
+        function setActiveButton(viewType) {
+            const buttons = document.querySelectorAll('#navigation-buttons button');
+            buttons.forEach(button => {
+                button.classList.remove('active-button');
+                if (viewType && button.id === `btn-${viewType}`) {
+                    button.classList.add('active-button');
+                }
+            });
+        }
+
+
+        // --- Animation Loop ---
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update(); // Required if enableDamping is true
+
+            // Subtle rotation
+            const rotationSpeed = 0.0015;
+             if (dnaModel.visible) dnaModel.rotation.y += rotationSpeed;
+             if (rnaModel.visible) rnaModel.rotation.y += rotationSpeed * 1.2; // Slightly faster
+             if (prionNormalModel.visible) prionNormalModel.rotation.y += rotationSpeed * 1.5;
+             if (prionMisfoldedModel.visible) prionMisfoldedModel.rotation.y -= rotationSpeed * 1.5; // Opposite
+
+
+            renderer.render(scene, camera);
+        }
+
+        // --- Event Handlers ---
+        function onWindowResize() {
+            const container = document.getElementById('canvas-container');
+            camera.aspect = container.clientWidth / container.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(container.clientWidth, container.clientHeight);
+        }
+
+        // --- Start ---
+        init();
+
+    </script>
+
+</body>
+</html>

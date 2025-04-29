@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Graphing Calculator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.8.0/math.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            /* Prevent scrolling caused by canvas resizing */
+            overflow: hidden;
+        }
+        /* Style the canvas */
+        #graphCanvas {
+            border: 1px solid #d1d5db; /* gray-300 */
+            background-color: #f9fafb; /* gray-50 */
+            display: block; /* Remove extra space below canvas */
+            touch-action: none; /* Disable browser default touch actions like scroll/zoom on the canvas */
+        }
+        /* Ensure container takes up height */
+        html, body {
+             height: 100%;
+             margin: 0;
+        }
+        .full-height-flex {
+            display: flex;
+            flex-direction: column;
+            height: 100vh; /* Full viewport height */
+        }
+    </style>
+</head>
+<body class="bg-gray-100">
+
+    <div class="full-height-flex container mx-auto p-4 max-w-4xl">
+
+        <h1 class="text-2xl md:text-3xl font-bold mb-4 text-center text-gray-800">Interactive Graphing Calculator</h1>
+
+        <div class="flex flex-col sm:flex-row items-center gap-2 mb-4">
+            <label for="functionInput" class="font-semibold text-gray-700 whitespace-nowrap"> y = </label>
+            <input
+                type="text"
+                id="functionInput"
+                placeholder="e.g., x^2, sin(x), 2*x + 1"
+                aria-label="Function input"
+                class="flex-grow p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition duration-200 w-full sm:w-auto"
+                value="x^2" />
+            <button
+                id="graphButton"
+                class="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-5 rounded-lg transition duration-200 shadow active:scale-95 w-full sm:w-auto"
+            >
+                Graph
+            </button>
+        </div>
+
+        <div class="flex-grow relative border rounded-lg shadow-md overflow-hidden bg-white">
+             <canvas id="graphCanvas"></canvas>
+             <div id="messageOverlay" class="absolute inset-0 flex items-center justify-center bg-white bg-opacity-75 text-red-600 font-semibold p-4 text-center" style="display: none;">
+                Error message here
+            </div>
+        </div>
+
+         <div class="mt-2 text-sm text-gray-600 text-center h-5">
+             <span id="infoDisplay"></span>
+         </div>
+
+    </div>
+
+    <script>
+        // --- DOM Elements ---
+        const functionInput = document.getElementById('functionInput');
+        const graphButton = document.getElementById('graphButton');
+        const canvas = document.getElementById('graphCanvas');
+        const canvasContainer = canvas.parentElement; // Get the container div
+        const messageOverlay = document.getElementById('messageOverlay');
+        const infoDisplay = document.getElementById('infoDisplay');
+        const ctx = canvas.getContext('2d'); // The "pen" we use to draw on the canvas
+
+        // --- Graph State & Configuration ---
+        let zoom = 40; // Pixels per unit (e.g., 40 pixels = 1 unit on the graph)
+        let panX = 0; // Horizontal pan offset in pixels
+        let panY = 0; // Vertical pan offset in pixels
+        let isPanning = false;
+        let lastPanX, lastPanY;
+        let compiledFunction = null; // To store the compiled version of the user's function
+
+        // --- Functions ---
+
+        /**
+         * Shows an error message over the canvas.
+         * @param {string} message - The error message to display.
+         */
+        function showError(message) {
+            messageOverlay.textContent = message;
+            messageOverlay.style.display = 'flex'; // Show the overlay
+             // Optional: Hide after a few seconds
+             setTimeout(() => {
+                 messageOverlay.style.display = 'none';
+             }, 5000);
+        }
+
+        /**
+         * Hides the error message overlay.
+         */
+        function hideError() {
+             messageOverlay.style.display = 'none';
+        }
+
+
+        /**
+         * Resizes the canvas to fill its container and redraws the graph.
+         */
+        function resizeCanvas() {
+            // Get the dimensions of the container element
+            const containerWidth = canvasContainer.clientWidth;
+            const containerHeight = canvasContainer.clientHeight;
+
+            // Set canvas dimensions (important for crisp drawing)
+            canvas.width = containerWidth;
+            canvas.height = containerHeight;
+
+            // Redraw the graph after resizing
+            drawGraph();
+            console.log(`Canvas resized to: ${canvas.width}x${canvas.height}`);
+        }
+
+        /**
+         * Draws the coordinate axes and grid lines on the canvas.
+         */
+        function drawAxesAndGrid() {
+            const width = canvas.width;
+            const height = canvas.height;
+            const originX = width / 2 + panX; // Center X, adjusted by pan
+            const originY = height / 2 + panY; // Center Y, adjusted by pan
+
+            ctx.clearRect(0, 0, width, height); // Clear the canvas first
+            ctx.strokeStyle = "#ccc"; // Light grey for grid lines
+            ctx.lineWidth = 0.5;
+
+            // --- Draw Grid Lines ---
+            // Vertical grid lines
+            for (let x = originX % zoom; x < width; x += zoom) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, height);
+                ctx.stroke();
+            }
+             for (let x = originX % zoom - zoom; x >= 0; x -= zoom) { // Lines to the left
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, height);
+                ctx.stroke();
+            }
+
+            // Horizontal grid lines
+            for (let y = originY % zoom; y < height; y += zoom) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(width, y);
+                ctx.stroke();
+            }
+             for (let y = originY % zoom - zoom; y >= 0; y -= zoom) { // Lines above
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(width, y);
+                ctx.stroke();
+            }
+
+            // --- Draw Axes ---
+            ctx.strokeStyle = "#333"; // Darker grey for axes
+            ctx.lineWidth = 1;
+
+            // X-axis
+            ctx.beginPath();
+            ctx.moveTo(0, originY);
+            ctx.lineTo(width, originY);
+            ctx.stroke();
+
+            // Y-axis
+            ctx.beginPath();
+            ctx.moveTo(originX, 0);
+            ctx.lineTo(originX, height);
+            ctx.stroke();
+
+             // --- Draw Axis Labels/Numbers (Optional but helpful) ---
+             ctx.fillStyle = "#555";
+             ctx.font = "10px Inter";
+             ctx.textAlign = "center";
+             ctx.textBaseline = "top";
+
+             // X-axis numbers
+             for (let i = 1; originX + i * zoom < width; i++) { // Positive X
+                 ctx.fillText(i, originX + i * zoom, originY + 4);
+             }
+              for (let i = -1; originX + i * zoom >= 0; i--) { // Negative X
+                 ctx.fillText(i, originX + i * zoom, originY + 4);
+             }
+
+             ctx.textAlign = "right";
+             ctx.textBaseline = "middle";
+             // Y-axis numbers
+             for (let i = 1; originY - i * zoom >= 0; i++) { // Positive Y (upwards)
+                 ctx.fillText(i, originX - 4, originY - i * zoom);
+             }
+             for (let i = -1; originY - i * zoom < height; i--) { // Negative Y (downwards)
+                 ctx.fillText(i, originX - 4, originY - i * zoom);
+             }
+             // Origin Label
+             ctx.fillText('0', originX - 4, originY + 4);
+        }
+
+
+        /**
+         * Plots the function stored in `compiledFunction`.
+         */
+        function plotFunction() {
+            if (!compiledFunction) return; // Don't plot if no valid function
+
+            const width = canvas.width;
+            const height = canvas.height;
+            const originX = width / 2 + panX;
+            const originY = height / 2 + panY;
+
+            ctx.strokeStyle = "#0085CA"; // Panthers Blue for the function line
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+
+            let firstPoint = true;
+
+            // Loop through each pixel horizontally
+            for (let pixelX = 0; pixelX < width; pixelX++) {
+                // Convert pixel coordinate to graph coordinate (relative to origin and zoom)
+                const graphX = (pixelX - originX) / zoom;
+
+                try {
+                    // Calculate the y-value using the compiled function
+                    const graphY = compiledFunction.evaluate({ x: graphX });
+
+                    // Check for invalid results (Infinity, NaN) which can break drawing
+                    if (!isFinite(graphY)) {
+                        // If result is invalid, end the current line segment
+                        if (!firstPoint) {
+                             ctx.stroke(); // Draw the segment up to this point
+                        }
+                        firstPoint = true; // Start a new segment after the gap
+                        continue; // Skip this point
+                    }
+
+                    // Convert graph y-coordinate back to pixel coordinate
+                    // Remember y-axis is inverted in canvas (0 is top)
+                    const pixelY = originY - graphY * zoom;
+
+                    // Move to the first point or draw a line to the next point
+                    if (firstPoint) {
+                        ctx.moveTo(pixelX, pixelY);
+                        firstPoint = false;
+                    } else {
+                        ctx.lineTo(pixelX, pixelY);
+                    }
+                } catch (error) {
+                    // This catch might be needed if evaluation fails unexpectedly,
+                    // though math.js compile should catch most syntax errors.
+                    console.error("Error evaluating function at x =", graphX, error);
+                    // Stop drawing this function if evaluation fails mid-way
+                    showError(`Error evaluating function near x=${graphX.toFixed(2)}`);
+                    compiledFunction = null; // Invalidate function on error
+                    ctx.stroke(); // Draw what we have so far
+                    return; // Exit plotting
+                }
+            }
+
+            // Draw the complete line path
+            if (!firstPoint) { // Ensure there was at least one valid point
+                 ctx.stroke();
+            }
+        }
+
+        /**
+         * Compiles the user's input string into a usable function object.
+         * Uses math.js for safe evaluation.
+         */
+        function compileInputFunction() {
+             hideError(); // Clear previous errors
+             const functionString = functionInput.value.trim();
+             if (!functionString) {
+                 compiledFunction = null; // No function entered
+                 return; // Don't try to compile empty string
+             }
+
+             try {
+                 // Parse the expression using math.js
+                 const node = math.parse(functionString);
+                 // Compile it into an evaluatable object
+                 compiledFunction = node.compile();
+                 console.log("Function compiled successfully:", functionString);
+             } catch (error) {
+                 console.error("Error parsing function:", error);
+                 showError(`Invalid function: ${error.message}`);
+                 compiledFunction = null; // Set to null if compilation fails
+             }
+        }
+
+
+        /**
+         * Main drawing function: clears, draws axes, and plots the function.
+         */
+        function drawGraph() {
+            // Ensure canvas context is valid
+            if (!ctx) {
+                console.error("Canvas context is not available.");
+                return;
+            }
+            window.requestAnimationFrame(() => { // Use animation frame for smoother rendering
+                 drawAxesAndGrid(); // Draw the background grid and axes
+                 plotFunction(); // Draw the function line itself
+            });
+
+        }
+
+        // --- Event Handlers ---
+
+        /**
+         * Handles the click event for the "Graph" button.
+         */
+        function handleGraphButtonClick() {
+            compileInputFunction(); // Compile the new function
+            drawGraph(); // Redraw everything
+        }
+
+        /**
+         * Handles mouse wheel events for zooming.
+         */
+        function handleWheel(event) {
+             event.preventDefault(); // Prevent page scrolling
+
+             const scaleFactor = 1.1;
+             const rect = canvas.getBoundingClientRect();
+              // Mouse position relative to canvas top-left
+             const mouseX = event.clientX - rect.left;
+             const mouseY = event.clientY - rect.top;
+
+             // Calculate graph coordinates under the mouse before zoom
+             const graphXBefore = (mouseX - (canvas.width / 2 + panX)) / zoom;
+             const graphYBefore = (mouseY - (canvas.height / 2 + panY)) / -zoom; // Y is inverted
+
+             // Adjust zoom
+             if (event.deltaY < 0) {
+                 zoom *= scaleFactor; // Zoom in
+             } else {
+                 zoom /= scaleFactor; // Zoom out
+             }
+             // Clamp zoom levels to prevent extreme values
+             zoom = Math.max(5, Math.min(1000, zoom)); // Example limits
+
+             // Calculate where the graph coordinates under the mouse *should* be after zoom
+             // We need to adjust panX/panY so that the point under the mouse stays in the same place
+             panX = mouseX - (graphXBefore * zoom) - canvas.width / 2;
+             panY = mouseY - (graphYBefore * -zoom) - canvas.height / 2; // Y is inverted
+
+
+             infoDisplay.textContent = `Zoom: ${zoom.toFixed(1)}x`; // Update info display
+             drawGraph();
+        }
+
+         /**
+         * Handles mouse down events for starting panning.
+         */
+         function handleMouseDown(event) {
+             if (event.button !== 0) return; // Only pan with left mouse button
+             isPanning = true;
+             lastPanX = event.clientX;
+             lastPanY = event.clientY;
+             canvas.style.cursor = 'grabbing'; // Change cursor
+         }
+
+         /**
+         * Handles mouse move events for panning.
+         */
+         function handleMouseMove(event) {
+             if (!isPanning) return;
+
+             const dx = event.clientX - lastPanX;
+             const dy = event.clientY - lastPanY;
+
+             panX += dx;
+             panY += dy;
+
+             lastPanX = event.clientX;
+             lastPanY = event.clientY;
+
+             // Display current center coordinates (optional)
+             const centerX = -panX / zoom;
+             const centerY = panY / zoom; // Y is inverted relative to pan
+             infoDisplay.textContent = `Center: (${centerX.toFixed(2)}, ${centerY.toFixed(2)}) Zoom: ${zoom.toFixed(1)}x`;
+
+
+             drawGraph();
+         }
+
+         /**
+         * Handles mouse up events to stop panning.
+         */
+         function handleMouseUp(event) {
+             if (event.button === 0) { // Left button released
+                 isPanning = false;
+                 canvas.style.cursor = 'grab'; // Change cursor back
+             }
+         }
+
+         /**
+         * Handles mouse leaving the canvas area to stop panning.
+         */
+         function handleMouseOut(event) {
+             if (isPanning) {
+                 isPanning = false;
+                 canvas.style.cursor = 'grab';
+             }
+         }
+
+         // --- Touch Event Handlers (for panning/zooming on mobile) ---
+         let lastTouchDistance = null;
+         let touchPanStartX = 0;
+         let touchPanStartY = 0;
+
+         function handleTouchStart(event) {
+             event.preventDefault();
+             const touches = event.touches;
+             if (touches.length === 1) { // Start panning
+                 isPanning = true;
+                 lastPanX = touches[0].clientX;
+                 lastPanY = touches[0].clientY;
+                 touchPanStartX = panX; // Store initial pan state for this touch
+                 touchPanStartY = panY;
+                 canvas.style.cursor = 'grabbing';
+             } else if (touches.length === 2) { // Start zooming
+                 isPanning = false; // Stop panning if starting zoom
+                 lastTouchDistance = getTouchDistance(touches);
+             }
+         }
+
+         function handleTouchMove(event) {
+             event.preventDefault();
+             const touches = event.touches;
+             if (isPanning && touches.length === 1) { // Panning
+                 const dx = touches[0].clientX - lastPanX;
+                 const dy = touches[0].clientY - lastPanY;
+                 panX += dx;
+                 panY += dy;
+                 lastPanX = touches[0].clientX;
+                 lastPanY = touches[0].clientY;
+
+                 const centerX = -panX / zoom;
+                 const centerY = panY / zoom;
+                 infoDisplay.textContent = `Center: (${centerX.toFixed(2)}, ${centerY.toFixed(2)}) Zoom: ${zoom.toFixed(1)}x`;
+
+                 drawGraph();
+             } else if (touches.length === 2) { // Zooming
+                 const currentDistance = getTouchDistance(touches);
+                 if (lastTouchDistance !== null) {
+                     const scaleFactor = currentDistance / lastTouchDistance;
+
+                     // Calculate midpoint between touches relative to canvas
+                     const rect = canvas.getBoundingClientRect();
+                     const midX = ((touches[0].clientX + touches[1].clientX) / 2) - rect.left;
+                     const midY = ((touches[0].clientY + touches[1].clientY) / 2) - rect.top;
+
+                      // Graph coordinates under the midpoint before zoom
+                     const graphXBefore = (midX - (canvas.width / 2 + panX)) / zoom;
+                     const graphYBefore = (midY - (canvas.height / 2 + panY)) / -zoom; // Y inverted
+
+                     // Apply zoom
+                     zoom *= scaleFactor;
+                     zoom = Math.max(5, Math.min(1000, zoom)); // Clamp zoom
+
+                     // Adjust pan to keep midpoint stable
+                     panX = midX - (graphXBefore * zoom) - canvas.width / 2;
+                     panY = midY - (graphYBefore * -zoom) - canvas.height / 2; // Y inverted
+
+                     infoDisplay.textContent = `Zoom: ${zoom.toFixed(1)}x`;
+                     drawGraph();
+                 }
+                 lastTouchDistance = currentDistance;
+             }
+         }
+
+         function handleTouchEnd(event) {
+             // Reset states when touches end
+             isPanning = false;
+             lastTouchDistance = null;
+             canvas.style.cursor = 'grab';
+             // Redraw in case state needs finalizing (optional)
+             // drawGraph();
+         }
+
+         function getTouchDistance(touches) {
+             const dx = touches[0].clientX - touches[1].clientX;
+             const dy = touches[0].clientY - touches[1].clientY;
+             return Math.sqrt(dx * dx + dy * dy);
+         }
+
+
+        // --- Event Listeners ---
+        graphButton.addEventListener('click', handleGraphButtonClick);
+        // Also graph when Enter is pressed in the input field
+        functionInput.addEventListener('keypress', (event) => {
+            if (event.key === 'Enter') {
+                handleGraphButtonClick();
+            }
+        });
+
+        // Resize listener
+        window.addEventListener('resize', resizeCanvas);
+
+        // Mouse interaction listeners (Zoom and Pan)
+        canvas.addEventListener('wheel', handleWheel);
+        canvas.addEventListener('mousedown', handleMouseDown);
+        canvas.addEventListener('mousemove', handleMouseMove);
+        canvas.addEventListener('mouseup', handleMouseUp);
+        canvas.addEventListener('mouseout', handleMouseOut); // Stop panning if mouse leaves canvas
+
+        // Touch interaction listeners (Pan and Pinch Zoom)
+        canvas.addEventListener('touchstart', handleTouchStart);
+        canvas.addEventListener('touchmove', handleTouchMove);
+        canvas.addEventListener('touchend', handleTouchEnd);
+        canvas.addEventListener('touchcancel', handleTouchEnd); // Handle cancellation
+
+
+        // --- Initial Setup ---
+        resizeCanvas(); // Set initial canvas size
+        compileInputFunction(); // Compile the default function ("x^2")
+        drawGraph(); // Draw the initial axes and the default function
+        canvas.style.cursor = 'grab'; // Set initial cursor
+
+
+    </script>
+
+</body>
+</html>

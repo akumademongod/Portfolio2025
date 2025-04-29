@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Graphing Calculator - Multi-Function</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.8.0/math.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            /* Prevent scrolling caused by canvas resizing */
+            overflow: hidden;
+        }
+        /* Style the canvas */
+        #graphCanvas {
+            border: 1px solid #d1d5db; /* gray-300 */
+            background-color: #f9fafb; /* gray-50 */
+            display: block; /* Remove extra space below canvas */
+            touch-action: none; /* Disable browser default touch actions like scroll/zoom on the canvas */
+            cursor: grab; /* Default cursor */
+        }
+        /* Ensure container takes up height */
+        html, body {
+             height: 100%;
+             margin: 0;
+        }
+        .full-height-flex {
+            display: flex;
+            flex-direction: column;
+            height: 100vh; /* Full viewport height */
+        }
+        /* Style for function list items */
+        .function-list-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem; /* Equivalent to gap-2 */
+            padding: 0.25rem; /* Equivalent to p-1 */
+            border-bottom: 1px solid #e5e7eb; /* Equivalent to border-b border-gray-200 */
+            &:last-child {
+                border-bottom: 0; /* Equivalent to last:border-b-0 */
+            }
+        }
+        .function-color-swatch {
+            width: 1rem; /* w-4 */
+            height: 1rem; /* h-4 */
+            border-radius: 0.25rem; /* rounded */
+            border: 1px solid #cbd5e0; /* border-gray-400 */
+            flex-shrink: 0; /* flex-shrink-0 */
+        }
+        .function-text {
+            flex-grow: 1;
+            font-size: 0.875rem; /* text-sm */
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis; /* truncate */
+        }
+        .function-toggle {
+             flex-shrink: 0;
+        }
+        /* Scrollable function list */
+        #functionListContainer {
+             max-height: 150px; /* Limit height */
+             overflow-y: auto; /* Add scroll if needed */
+             border: 1px solid #e5e7eb; /* Example border color */
+             border-radius: 0.375rem; /* rounded-md */
+             background-color: #ffffff; /* bg-white */
+             padding: 0.5rem; /* p-2 */
+        }
+    </style>
+</head>
+<body class="bg-gray-100">
+
+    <div class="full-height-flex container mx-auto p-4 max-w-4xl">
+
+        <h1 class="text-2xl md:text-3xl font-bold mb-4 text-center text-gray-800">Interactive Graphing Calculator</h1>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+            <div class="md:col-span-2">
+                <label for="functionInput" class="block font-semibold text-gray-700 mb-1">Enter Functions (one per line):</label>
+                <textarea
+                    id="functionInput"
+                    placeholder="e.g., x^2&#10;sin(x)&#10;2*x + 1"
+                    aria-label="Function input area"
+                    rows="3"
+                    class="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition duration-200 text-sm"
+                >x^2</textarea> <div class="flex gap-2 mt-2">
+                     <button
+                        id="graphButton"
+                        class="flex-1 bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-200 shadow active:scale-95 text-sm"
+                    >
+                        Graph Functions
+                    </button>
+                     <button
+                        id="resetViewButton"
+                        title="Reset Zoom and Pan"
+                        class="flex-shrink-0 bg-gray-500 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-200 shadow active:scale-95 text-sm"
+                    >
+                        Reset View
+                    </button>
+                 </div>
+            </div>
+
+            <div class="md:col-span-1">
+                 <label class="block font-semibold text-gray-700 mb-1">Functions:</label>
+                 <div id="functionListContainer">
+                     <ul id="functionList">
+                         </ul>
+                     <p id="functionListPlaceholder" class="text-center text-gray-400 text-sm italic">No functions entered yet.</p>
+                 </div>
+            </div>
+        </div>
+
+
+        <div class="flex-grow relative border rounded-lg shadow-md overflow-hidden bg-white">
+             <canvas id="graphCanvas"></canvas>
+             <div id="messageOverlay" class="absolute inset-0 flex items-center justify-center bg-white bg-opacity-75 text-red-600 font-semibold p-4 text-center pointer-events-none" style="display: none;">
+                Error message here
+            </div>
+            <div id="coordOverlay" class="absolute top-2 left-2 bg-black bg-opacity-50 text-white text-xs p-1 rounded pointer-events-none" style="display: none;">
+                X: 0.00, Y: 0.00
+            </div>
+        </div>
+
+         <div class="mt-2 text-sm text-gray-600 text-center h-5">
+             <span id="infoDisplay">Zoom: 40.0x | Center: (0.00, 0.00)</span> </div>
+
+    </div>
+
+    <script>
+        // --- DOM Elements ---
+        const functionInput = document.getElementById('functionInput');
+        const graphButton = document.getElementById('graphButton');
+        const resetViewButton = document.getElementById('resetViewButton');
+        const functionList = document.getElementById('functionList');
+        const functionListPlaceholder = document.getElementById('functionListPlaceholder');
+        const canvas = document.getElementById('graphCanvas');
+        const canvasContainer = canvas.parentElement;
+        const messageOverlay = document.getElementById('messageOverlay');
+        const coordOverlay = document.getElementById('coordOverlay'); // For trace coordinates
+        const infoDisplay = document.getElementById('infoDisplay'); // For zoom/pan info
+        const ctx = canvas.getContext('2d');
+
+        // --- Graph State & Configuration ---
+        const DEFAULT_ZOOM = 40;
+        const DEFAULT_PAN_X = 0;
+        const DEFAULT_PAN_Y = 0;
+        let zoom = DEFAULT_ZOOM;
+        let panX = DEFAULT_PAN_X;
+        let panY = DEFAULT_PAN_Y;
+        let isPanning = false;
+        let lastPanX, lastPanY;
+        let functions = []; // Array to hold function objects: { text: string, compiled: function, color: string, visible: boolean }
+        const functionColors = [ // Predefined colors for functions
+            "#0085CA", // Panthers Blue
+            "#E53E3E", // Red
+            "#38A169", // Green
+            "#DD6B20", // Orange
+            "#805AD5", // Purple
+            "#3182CE", // Blue
+            "#D53F8C", // Pink
+        ];
+        let isTracing = false; // Flag to indicate if mouse is tracing coordinates
+
+
+        // --- Functions ---
+
+        /**
+         * Updates the zoom/pan info display below the canvas.
+         */
+        function updateInfoDisplay() {
+            const centerX = (-panX / zoom).toFixed(2);
+            const centerY = (panY / zoom).toFixed(2); // Y is inverted relative to pan
+            infoDisplay.textContent = `Zoom: ${zoom.toFixed(1)}x | Center: (${centerX}, ${centerY})`;
+        }
+
+        /**
+         * Shows an error message over the canvas.
+         */
+        function showError(message) {
+            messageOverlay.textContent = message;
+            messageOverlay.style.display = 'flex';
+            setTimeout(() => { messageOverlay.style.display = 'none'; }, 5000);
+        }
+
+        /** Hides the error message overlay. */
+        function hideError() {
+            messageOverlay.style.display = 'none';
+        }
+
+        /**
+         * Resizes the canvas to fill its container and redraws the graph.
+         */
+        function resizeCanvas() {
+            canvas.width = canvasContainer.clientWidth;
+            canvas.height = canvasContainer.clientHeight;
+            drawGraph(); // Redraw needed after resize
+            console.log(`Canvas resized to: ${canvas.width}x${canvas.height}`);
+        }
+
+        /**
+         * Draws the coordinate axes and grid lines on the canvas. (Mostly unchanged)
+         */
+        function drawAxesAndGrid() {
+            const width = canvas.width;
+            const height = canvas.height;
+            const originX = width / 2 + panX;
+            const originY = height / 2 + panY;
+
+            ctx.clearRect(0, 0, width, height);
+            ctx.strokeStyle = "#ccc"; // Grid lines
+            ctx.lineWidth = 0.5;
+
+            // Draw Grid Lines (Vertical and Horizontal)
+            for (let x = originX % zoom; x < width; x += zoom) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, height); ctx.stroke(); }
+            for (let x = originX % zoom - zoom; x >= 0; x -= zoom) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, height); ctx.stroke(); }
+            for (let y = originY % zoom; y < height; y += zoom) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke(); }
+            for (let y = originY % zoom - zoom; y >= 0; y -= zoom) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke(); }
+
+            // Draw Axes
+            ctx.strokeStyle = "#333"; // Axes lines
+            ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.moveTo(0, originY); ctx.lineTo(width, originY); ctx.stroke(); // X-axis
+            ctx.beginPath(); ctx.moveTo(originX, 0); ctx.lineTo(originX, height); ctx.stroke(); // Y-axis
+
+            // Draw Axis Labels/Numbers
+             ctx.fillStyle = "#555";
+             ctx.font = "10px Inter";
+             ctx.textAlign = "center"; ctx.textBaseline = "top";
+             // X-axis numbers (adjust step based on zoom)
+             const xStep = zoom > 60 ? 1 : (zoom < 20 ? 5 : 2);
+             for (let i = xStep; originX + i * zoom < width; i += xStep) { ctx.fillText(i, originX + i * zoom, originY + 4); }
+             for (let i = -xStep; originX + i * zoom >= 0; i -= xStep) { ctx.fillText(i, originX + i * zoom, originY + 4); }
+
+             ctx.textAlign = "right"; ctx.textBaseline = "middle";
+             // Y-axis numbers (adjust step based on zoom)
+             const yStep = zoom > 60 ? 1 : (zoom < 20 ? 5 : 2);
+             for (let i = yStep; originY - i * zoom >= 0; i += yStep) { ctx.fillText(i, originX - 4, originY - i * zoom); }
+             for (let i = -yStep; originY - i * zoom < height; i -= yStep) { ctx.fillText(i, originX - 4, originY - i * zoom); }
+             ctx.fillText('0', originX - 4, originY + 4); // Origin label
+        }
+
+        /**
+         * Plots all visible functions stored in the `functions` array.
+         */
+        function plotFunctions() {
+            const width = canvas.width;
+            const height = canvas.height;
+            const originX = width / 2 + panX;
+            const originY = height / 2 + panY;
+
+            functions.forEach(func => {
+                if (!func.compiled || !func.visible) return; // Skip if not compiled or not visible
+
+                ctx.strokeStyle = func.color; // Use the function's assigned color
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                let firstPoint = true;
+
+                for (let pixelX = 0; pixelX < width; pixelX++) {
+                    const graphX = (pixelX - originX) / zoom;
+                    try {
+                        const graphY = func.compiled.evaluate({ x: graphX });
+                        if (!isFinite(graphY)) {
+                            if (!firstPoint) ctx.stroke();
+                            firstPoint = true;
+                            continue;
+                        }
+                        const pixelY = originY - graphY * zoom;
+
+                        // Add check to prevent drawing far off-screen points (optimization)
+                        if (pixelY < -height * 2 || pixelY > height * 3) { // Allow some margin
+                             if (!firstPoint) ctx.stroke(); // End previous segment
+                             firstPoint = true; // Start new segment if it comes back
+                             continue;
+                        }
+
+
+                        if (firstPoint) {
+                            ctx.moveTo(pixelX, pixelY);
+                            firstPoint = false;
+                        } else {
+                            ctx.lineTo(pixelX, pixelY);
+                        }
+                    } catch (error) {
+                        console.error(`Error evaluating function "${func.text}" at x=${graphX}:`, error);
+                        showError(`Eval error in "${func.text}" near x=${graphX.toFixed(1)}`);
+                        // Maybe disable the function automatically?
+                        // func.visible = false; updateFunctionList(); // Example
+                        if (!firstPoint) ctx.stroke(); // Draw what we have
+                        return; // Stop plotting this specific function on error
+                    }
+                }
+                if (!firstPoint) ctx.stroke(); // Draw the path for this function
+            });
+        }
+
+        /**
+         * Updates the function list UI based on the `functions` array.
+         */
+        function updateFunctionList() {
+            functionList.innerHTML = ''; // Clear existing list
+            if (functions.length === 0) {
+                functionListPlaceholder.style.display = 'block';
+                return;
+            }
+            functionListPlaceholder.style.display = 'none';
+
+            functions.forEach((func, index) => {
+                const li = document.createElement('li');
+                li.className = 'function-list-item';
+
+                // Color Swatch
+                const swatch = document.createElement('span');
+                swatch.className = 'function-color-swatch';
+                swatch.style.backgroundColor = func.color;
+                li.appendChild(swatch);
+
+                // Function Text
+                const textSpan = document.createElement('span');
+                textSpan.className = 'function-text';
+                textSpan.textContent = func.text || '(empty)';
+                textSpan.title = func.text; // Show full text on hover
+                li.appendChild(textSpan);
+
+                // Visibility Toggle Checkbox
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.className = 'function-toggle form-checkbox h-4 w-4 text-blue-600 rounded'; // Added Tailwind form styles
+                checkbox.checked = func.visible;
+                checkbox.addEventListener('change', () => {
+                    func.visible = checkbox.checked;
+                    drawGraph(); // Redraw when visibility changes
+                });
+                li.appendChild(checkbox);
+
+                functionList.appendChild(li);
+            });
+        }
+
+
+        /**
+         * Compiles the functions from the input textarea.
+         */
+        function compileInputFunctions() {
+            hideError();
+            const functionStrings = functionInput.value.split('\n').map(s => s.trim()).filter(s => s !== ''); // Get non-empty lines
+            functions = []; // Reset the functions array
+
+            functionStrings.forEach((text, index) => {
+                let compiled = null;
+                let error = null;
+                try {
+                    const node = math.parse(text);
+                    compiled = node.compile();
+                } catch (e) {
+                    console.error(`Error parsing function "${text}":`, e);
+                    error = e.message; // Store error message
+                    // Show error immediately for the specific function
+                    showError(`Parse error in "${text}": ${error}`);
+                }
+                functions.push({
+                    text: text,
+                    compiled: compiled,
+                    color: functionColors[index % functionColors.length], // Cycle through colors
+                    visible: compiled !== null, // Initially visible only if compilation succeeded
+                    error: error // Store potential error
+                });
+            });
+            console.log("Functions compiled:", functions);
+            updateFunctionList(); // Update the UI list
+        }
+
+
+        /**
+         * Main drawing function: clears, draws axes, and plots functions.
+         */
+        function drawGraph() {
+            if (!ctx) { console.error("Canvas context lost."); return; }
+            window.requestAnimationFrame(() => { // Use animation frame
+                drawAxesAndGrid();
+                plotFunctions();
+                // Note: Trace indicator (like a dot) is drawn in handleTraceMouseMove if needed
+            });
+        }
+
+        // --- Event Handlers ---
+
+        /** Handles the "Graph" button click. */
+        function handleGraphButtonClick() {
+            compileInputFunctions();
+            drawGraph();
+        }
+
+        /** Handles the "Reset View" button click. */
+        function handleResetViewClick() {
+            zoom = DEFAULT_ZOOM;
+            panX = DEFAULT_PAN_X;
+            panY = DEFAULT_PAN_Y;
+            updateInfoDisplay(); // Update display text
+            drawGraph();
+        }
+
+
+        /** Handles mouse wheel for zooming. */
+        function handleWheel(event) {
+            event.preventDefault();
+            const scaleFactor = 1.1;
+            const rect = canvas.getBoundingClientRect();
+            const mouseX = event.clientX - rect.left;
+            const mouseY = event.clientY - rect.top;
+            const graphXBefore = (mouseX - (canvas.width / 2 + panX)) / zoom;
+            const graphYBefore = (mouseY - (canvas.height / 2 + panY)) / -zoom;
+
+            if (event.deltaY < 0) { zoom *= scaleFactor; } else { zoom /= scaleFactor; }
+            zoom = Math.max(5, Math.min(1000, zoom));
+
+            panX = mouseX - (graphXBefore * zoom) - canvas.width / 2;
+            panY = mouseY - (graphYBefore * -zoom) - canvas.height / 2;
+
+            updateInfoDisplay();
+            drawGraph();
+        }
+
+        /** Handles mouse down for starting panning. */
+        function handleMouseDown(event) {
+            if (event.button !== 0) return;
+            isPanning = true;
+            isTracing = false; // Stop tracing when panning starts
+            coordOverlay.style.display = 'none'; // Hide coordinate display during pan
+            lastPanX = event.clientX;
+            lastPanY = event.clientY;
+            canvas.style.cursor = 'grabbing';
+        }
+
+        /** Handles mouse move for panning OR tracing. */
+        function handleMouseMove(event) {
+            if (isPanning) {
+                // --- Panning Logic ---
+                const dx = event.clientX - lastPanX;
+                const dy = event.clientY - lastPanY;
+                panX += dx;
+                panY += dy;
+                lastPanX = event.clientX;
+                lastPanY = event.clientY;
+                updateInfoDisplay(); // Update center coordinates while panning
+                drawGraph();
+            } else {
+                 // --- Tracing Logic ---
+                 isTracing = true;
+                 handleTraceMouseMove(event); // Call trace handler
+            }
+        }
+
+         /** Handles mouse move specifically for tracing coordinates. */
+         function handleTraceMouseMove(event) {
+             if (!isTracing || isPanning) return; // Only trace if mouse is over canvas and not panning
+
+             const rect = canvas.getBoundingClientRect();
+             const mouseX = event.clientX - rect.left;
+             const mouseY = event.clientY - rect.top;
+
+             // Convert mouse pixel coordinates to graph coordinates
+             const graphX = (mouseX - (canvas.width / 2 + panX)) / zoom;
+             const graphY = (mouseY - (canvas.height / 2 + panY)) / -zoom; // Y is inverted
+
+             // Update the coordinate display overlay
+             coordOverlay.textContent = `X: ${graphX.toFixed(2)}, Y: ${graphY.toFixed(2)}`;
+             coordOverlay.style.display = 'block';
+
+             // Optional: Draw a small dot or crosshair at the mouse position *after* main draw
+             // This requires redrawing slightly differently or drawing on top.
+             // For simplicity now, we just show the text coordinates.
+             // To draw a dot:
+             // drawGraph(); // Redraw base graph first
+             // ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+             // ctx.beginPath();
+             // ctx.arc(mouseX, mouseY, 3, 0, Math.PI * 2); // Small circle at mouse position
+             // ctx.fill();
+         }
+
+
+        /** Handles mouse up to stop panning. */
+        function handleMouseUp(event) {
+            if (event.button === 0) {
+                isPanning = false;
+                canvas.style.cursor = 'grab';
+                // If mouse is still over canvas, start tracing again
+                const rect = canvas.getBoundingClientRect();
+                 if (event.clientX >= rect.left && event.clientX <= rect.right &&
+                     event.clientY >= rect.top && event.clientY <= rect.bottom) {
+                     isTracing = true;
+                     handleTraceMouseMove(event); // Show coords immediately
+                 } else {
+                     isTracing = false;
+                     coordOverlay.style.display = 'none';
+                 }
+            }
+        }
+
+        /** Handles mouse leaving the canvas area. */
+        function handleMouseOut(event) {
+            if (isPanning) {
+                isPanning = false;
+                canvas.style.cursor = 'grab';
+            }
+            isTracing = false; // Stop tracing when mouse leaves
+            coordOverlay.style.display = 'none'; // Hide coordinate display
+        }
+
+        // --- Touch Event Handlers (Adapted for Tracing/Info Display) ---
+        let lastTouchDistance = null;
+        let touchPanStartX = 0;
+        let touchPanStartY = 0;
+
+        function handleTouchStart(event) {
+            event.preventDefault();
+             isTracing = false; // Disable mouse tracing during touch
+             coordOverlay.style.display = 'none';
+            const touches = event.touches;
+            if (touches.length === 1) {
+                isPanning = true;
+                lastPanX = touches[0].clientX;
+                lastPanY = touches[0].clientY;
+                touchPanStartX = panX;
+                touchPanStartY = panY;
+                canvas.style.cursor = 'grabbing';
+            } else if (touches.length === 2) {
+                isPanning = false;
+                lastTouchDistance = getTouchDistance(touches);
+            }
+        }
+
+        function handleTouchMove(event) {
+            event.preventDefault();
+            const touches = event.touches;
+            if (isPanning && touches.length === 1) { // Panning
+                const dx = touches[0].clientX - lastPanX;
+                const dy = touches[0].clientY - lastPanY;
+                panX += dx;
+                panY += dy;
+                lastPanX = touches[0].clientX;
+                lastPanY = touches[0].clientY;
+                updateInfoDisplay(); // Update display during pan
+                drawGraph();
+            } else if (touches.length === 2) { // Zooming
+                const currentDistance = getTouchDistance(touches);
+                if (lastTouchDistance !== null) {
+                    const scaleFactor = currentDistance / lastTouchDistance;
+                    const rect = canvas.getBoundingClientRect();
+                    const midX = ((touches[0].clientX + touches[1].clientX) / 2) - rect.left;
+                    const midY = ((touches[0].clientY + touches[1].clientY) / 2) - rect.top;
+                    const graphXBefore = (midX - (canvas.width / 2 + panX)) / zoom;
+                    const graphYBefore = (midY - (canvas.height / 2 + panY)) / -zoom;
+
+                    zoom *= scaleFactor;
+                    zoom = Math.max(5, Math.min(1000, zoom));
+
+                    panX = midX - (graphXBefore * zoom) - canvas.width / 2;
+                    panY = midY - (graphYBefore * -zoom) - canvas.height / 2;
+
+                    updateInfoDisplay(); // Update display during zoom
+                    drawGraph();
+                }
+                lastTouchDistance = currentDistance;
+            }
+        }
+
+        function handleTouchEnd(event) {
+            isPanning = false;
+            lastTouchDistance = null;
+            canvas.style.cursor = 'grab';
+            // No tracing equivalent for touch end currently implemented
+        }
+
+        function getTouchDistance(touches) {
+            const dx = touches[0].clientX - touches[1].clientX;
+            const dy = touches[0].clientY - touches[1].clientY;
+            return Math.sqrt(dx * dx + dy * dy);
+        }
+
+
+        // --- Event Listeners ---
+        graphButton.addEventListener('click', handleGraphButtonClick);
+        resetViewButton.addEventListener('click', handleResetViewClick);
+        functionInput.addEventListener('keypress', (event) => {
+            if (event.key === 'Enter' && !event.shiftKey) { // Graph on Enter (unless Shift+Enter for newline)
+                 event.preventDefault(); // Prevent default Enter behavior (like adding newline sometimes)
+                 handleGraphButtonClick();
+            }
+        });
+
+        window.addEventListener('resize', resizeCanvas);
+
+        // Mouse interaction listeners
+        canvas.addEventListener('wheel', handleWheel);
+        canvas.addEventListener('mousedown', handleMouseDown);
+        canvas.addEventListener('mousemove', handleMouseMove); // Handles both pan and trace start
+        canvas.addEventListener('mouseup', handleMouseUp);
+        canvas.addEventListener('mouseout', handleMouseOut);
+        // canvas.addEventListener('mouseover', handleMouseOver); // Could be used to re-enable tracing
+
+        // Touch interaction listeners
+        canvas.addEventListener('touchstart', handleTouchStart, { passive: false }); // Need passive: false to preventDefault
+        canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
+        canvas.addEventListener('touchend', handleTouchEnd);
+        canvas.addEventListener('touchcancel', handleTouchEnd);
+
+
+        // --- Initial Setup ---
+        resizeCanvas(); // Set initial size
+        compileInputFunctions(); // Compile default function(s)
+        updateInfoDisplay(); // Set initial zoom/pan text
+        drawGraph(); // Draw initial graph
+
+
+    </script>
+
+</body>
+</html>

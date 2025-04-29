@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Basic Calculator - Panthers Theme</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            /* Define custom Carolina Panthers colors (approximate) */
+            --panthers-blue: #0085CA;
+            --panthers-black: #101820; /* A slightly off-black */
+            --panthers-silver: #A5ACAF; /* For accents */
+        }
+        /* Custom styles for calculator buttons using CSS variables */
+        .calc-button {
+            /* Lighter background for numbers, dark text */
+            @apply bg-gray-200 hover:bg-gray-300 text-black font-bold py-4 rounded-lg text-xl transition duration-150 ease-in-out shadow active:scale-95;
+        }
+        .calc-button-operator {
+             /* Use Panthers Black for operators */
+            background-color: var(--panthers-black);
+             /* Use Silver for text on black buttons */
+            color: var(--panthers-silver);
+            @apply hover:bg-gray-700 font-bold py-4 rounded-lg text-xl transition duration-150 ease-in-out shadow active:scale-95;
+        }
+        .calc-button-equals {
+             /* Use Panthers Blue for equals */
+            background-color: var(--panthers-blue);
+            @apply hover:bg-sky-700 text-white col-span-2 font-bold py-4 rounded-lg text-xl transition duration-150 ease-in-out shadow active:scale-95; /* Make equals button wider */
+        }
+         .calc-button-clear {
+            /* Using a contrasting red for clear, but could use silver or black */
+            @apply bg-red-600 hover:bg-red-700 text-white font-bold py-4 rounded-lg text-xl transition duration-150 ease-in-out shadow active:scale-95;
+        }
+        /* Style for the display */
+        #display {
+             /* Use Panthers Black for display background */
+            background-color: var(--panthers-black);
+             /* Use Silver or White for display text */
+            color: var(--panthers-silver);
+            @apply text-right text-4xl p-4 rounded-t-lg break-all; /* Allow text to wrap/break */
+            min-height: 70px; /* Ensure display has a minimum height */
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-gray-700 via-black to-gray-800 min-h-screen flex items-center justify-center p-4">
+
+    <div class="bg-gray-900 rounded-xl shadow-2xl w-full max-w-xs overflow-hidden border-2 border-[var(--panthers-blue)]">
+        <div id="display" aria-live="polite">0</div>
+
+        <div class="grid grid-cols-4 gap-1 p-2">
+            <button id="clear" class="calc-button calc-button-clear col-span-2">C</button>
+            <button id="backspace" class="calc-button calc-button-operator">⌫</button>
+            <button data-op="/" class="calc-button calc-button-operator">/</button>
+
+            <button data-num="7" class="calc-button">7</button>
+            <button data-num="8" class="calc-button">8</button>
+            <button data-num="9" class="calc-button">9</button>
+            <button data-op="*" class="calc-button calc-button-operator">*</button>
+
+            <button data-num="4" class="calc-button">4</button>
+            <button data-num="5" class="calc-button">5</button>
+            <button data-num="6" class="calc-button">6</button>
+            <button data-op="-" class="calc-button calc-button-operator">-</button>
+
+            <button data-num="1" class="calc-button">1</button>
+            <button data-num="2" class="calc-button">2</button>
+            <button data-num="3" class="calc-button">3</button>
+            <button data-op="+" class="calc-button calc-button-operator">+</button>
+
+            <button data-num="0" class="calc-button col-span-2">0</button>
+            <button id="decimal" class="calc-button">.</button>
+            <button id="equals" class="calc-button calc-button-equals">=</button>
+        </div>
+    </div>
+
+    <script>
+        // --- DOM Elements ---
+        const display = document.getElementById('display');
+        const numberButtons = document.querySelectorAll('[data-num]');
+        const operatorButtons = document.querySelectorAll('[data-op]');
+        const equalsButton = document.getElementById('equals');
+        const clearButton = document.getElementById('clear');
+        const decimalButton = document.getElementById('decimal');
+        const backspaceButton = document.getElementById('backspace');
+
+
+        // --- Calculator State ---
+        let currentOperand = '0'; // The number currently being entered or the result
+        let previousOperand = ''; // The first number in an operation
+        let operation = undefined; // The selected operation (+, -, *, /)
+        let shouldResetDisplay = false; // Flag to clear display before next number entry after operation or equals
+
+        // --- Functions ---
+
+        /**
+         * Updates the display with the current operand.
+         */
+        function updateDisplay() {
+            display.textContent = currentOperand;
+            // Adjust font size dynamically if number gets too long
+            const maxLength = 9; // Adjust as needed
+            const defaultFontSize = '2.5rem'; // Corresponds roughly to text-4xl
+            const smallerFontSize = '2rem'; // Corresponds roughly to text-3xl
+            const smallestFontSize = '1.5rem'; // Corresponds roughly to text-2xl
+
+            if (currentOperand.length > maxLength + 4) {
+                 display.style.fontSize = smallestFontSize;
+            } else if (currentOperand.length > maxLength) {
+                 display.style.fontSize = smallerFontSize;
+            } else {
+                 display.style.fontSize = defaultFontSize;
+            }
+        }
+
+        /**
+         * Appends a number to the current operand.
+         * @param {string} number - The number (0-9) to append.
+         */
+        function appendNumber(number) {
+             // Handle 'Error' state - clear before appending
+            if (currentOperand === 'Error') {
+                currentOperand = '';
+            }
+            // If display should be reset (after operation/equals), start new number
+            if (shouldResetDisplay) {
+                currentOperand = '';
+                shouldResetDisplay = false;
+            }
+            // Prevent multiple leading zeros unless it's the only digit
+            if (number === '0' && currentOperand === '0') return;
+            // If current operand is '0' and a different number is pressed, replace '0'
+            if (currentOperand === '0' && number !== '.') {
+                 currentOperand = number;
+            } else {
+                 // Limit the length to prevent overflow
+                 if (currentOperand.length >= 15) return; // Adjust limit as needed
+                 currentOperand += number;
+            }
+        }
+
+        /**
+         * Appends a decimal point if one doesn't already exist.
+         */
+        function appendDecimal() {
+            if (currentOperand === 'Error') return; // Don't add decimal to error message
+            if (shouldResetDisplay) { // Start new number if needed
+                currentOperand = '0.';
+                shouldResetDisplay = false;
+                return;
+            }
+            if (currentOperand.includes('.')) return; // Prevent multiple decimals
+            if (currentOperand === '') currentOperand = '0'; // Start with '0.' if empty
+            currentOperand += '.';
+        }
+
+         /**
+         * Handles the backspace functionality.
+         */
+        function backspace() {
+            if (currentOperand === 'Error') { // Clear error on backspace
+                clear();
+                return;
+            }
+            if (shouldResetDisplay) { // If we just calculated, clear instead
+                clear();
+                return;
+            }
+            if (currentOperand.length > 1) {
+                currentOperand = currentOperand.slice(0, -1);
+            } else {
+                currentOperand = '0'; // Reset to 0 if only one digit left
+            }
+        }
+
+
+        /**
+         * Selects the mathematical operation.
+         * @param {string} selectedOperation - The operator (+, -, *, /).
+         */
+        function chooseOperation(selectedOperation) {
+            if (currentOperand === 'Error') return; // Don't allow operations on 'Error'
+            // If currentOperand is empty but previousOperand exists, just update the operator
+            if (currentOperand === '' && previousOperand !== '') {
+                 operation = selectedOperation;
+                 return;
+            }
+            if (currentOperand === '' && previousOperand === '') return; // Nothing to operate on
+
+
+            // If there's already a previous operand, calculate first
+            if (previousOperand !== '') {
+                // Allow chaining operations without pressing equals
+                const tempCurrent = currentOperand; // Store current operand temporarily
+                calculate();
+                // If calculate resulted in an error, stop here
+                if (currentOperand === 'Error') {
+                     // Keep 'Error' displayed, reset previous operand and operation
+                     previousOperand = '';
+                     operation = undefined;
+                     return;
+                }
+                 // After calculation, the result is in currentOperand. Move it to previousOperand.
+                 previousOperand = currentOperand;
+                 currentOperand = ''; // Clear current operand for next input
+            } else {
+                 // If no previous operand, move current to previous
+                 previousOperand = currentOperand;
+                 currentOperand = '';
+            }
+
+
+            // Set up for the next operation
+            operation = selectedOperation;
+            // previousOperand = currentOperand; // This is now handled above
+            // currentOperand = ''; // Ready for the next number - Handled above
+            shouldResetDisplay = true; // Display will reset on next number input
+        }
+
+        /**
+         * Performs the calculation based on stored operands and operation.
+         */
+        function calculate() {
+            let result;
+            // Use previousOperand if it exists, otherwise use the current display value
+            // This handles cases like pressing '=' multiple times or starting with an operator
+            const prev = parseFloat(previousOperand);
+            const current = parseFloat(currentOperand);
+
+            // Check if numbers are valid; allow calculation if only current is valid (e.g. pressing '=' after just entering a number)
+             if (isNaN(prev) || isNaN(current)) {
+                 // If only current is valid and no operation is set, do nothing (or just keep current)
+                 if (!isNaN(current) && operation === undefined) {
+                      // Keep current operand as is, reset shouldResetDisplay if needed
+                      shouldResetDisplay = true;
+                      return;
+                 }
+                 // If prev is invalid or current is invalid (and an operation is set), it's likely an error state or incomplete input
+                 // We might want to prevent calculation or handle specific cases
+                 if (operation !== undefined && (isNaN(prev) || isNaN(current))) {
+                     // Maybe clear or show an error? For now, just return.
+                     // console.error("Calculation error: Invalid operands", { prev, current, operation });
+                     // Let's prevent calculation if inputs aren't ready
+                     return;
+                 }
+             }
+
+
+            switch (operation) {
+                case '+':
+                    result = prev + current;
+                    break;
+                case '-':
+                    result = prev - current;
+                    break;
+                case '*':
+                    result = prev * current;
+                    break;
+                case '/':
+                    if (current === 0) {
+                        result = 'Error'; // Handle division by zero
+                    } else {
+                        result = prev / current;
+                    }
+                    break;
+                default:
+                    // If no operation is set, but we have a previous and current (e.g. from chaining),
+                    // maybe just display the current number? Or do nothing.
+                    // If calculate was called without an operation (e.g. pressing equals first), just return
+                     if (operation === undefined) return;
+
+            }
+
+            if (result === 'Error') {
+                 currentOperand = 'Error';
+                 operation = undefined; // Clear operation after error
+                 previousOperand = ''; // Clear previous operand after error
+            } else {
+                 // Optional: Round to a certain number of decimal places to avoid floating point issues
+                 // result = parseFloat(result.toPrecision(12)); // Limit precision
+                 currentOperand = result.toString();
+                 // After a successful calculation, clear the operation and previous operand
+                 // so pressing equals again doesn't repeat the last operation with the result
+                 operation = undefined;
+                 previousOperand = ''; // Clear previous operand after calculation
+            }
+
+            // Reset state for next calculation (or allow chaining)
+            // operation = undefined; // Moved up
+            // previousOperand = ''; // Moved up
+            shouldResetDisplay = true; // Reset display on next number input
+        }
+
+        /**
+         * Resets the calculator to its initial state.
+         */
+        function clear() {
+            currentOperand = '0';
+            previousOperand = '';
+            operation = undefined;
+            shouldResetDisplay = false;
+            updateDisplay(); // Update display immediately
+        }
+
+        // --- Event Listeners ---
+
+        numberButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                appendNumber(button.dataset.num);
+                updateDisplay();
+            });
+        });
+
+        operatorButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                chooseOperation(button.dataset.op);
+                // Update display to show the first operand if needed, or handle visually
+                // For now, the display only updates when numbers are pressed or equals/clear
+            });
+        });
+
+        equalsButton.addEventListener('click', () => {
+            calculate();
+            updateDisplay();
+        });
+
+        clearButton.addEventListener('click', () => {
+            clear();
+        });
+
+        decimalButton.addEventListener('click', () => {
+            appendDecimal();
+            updateDisplay();
+        });
+
+         backspaceButton.addEventListener('click', () => {
+            backspace();
+            updateDisplay();
+        });
+
+        // Add Keyboard Support (Optional but good for usability)
+        window.addEventListener('keydown', handleKeyboardInput);
+
+        function handleKeyboardInput(e) {
+            const key = e.key;
+            if (key >= 0 && key <= 9) {
+                appendNumber(key);
+                updateDisplay();
+            } else if (key === '.') {
+                appendDecimal();
+                updateDisplay();
+            } else if (key === '+' || key === '-' || key === '*' || key === '/') {
+                chooseOperation(key);
+            } else if (key === 'Enter' || key === '=') {
+                e.preventDefault(); // Prevent default Enter behavior (like form submission)
+                calculate();
+                updateDisplay();
+            } else if (key === 'Backspace') {
+                backspace();
+                updateDisplay();
+            } else if (key === 'Escape' || key.toLowerCase() === 'c') {
+                clear();
+            }
+            // Add visual feedback for key presses (optional)
+            const button = findButtonForKey(key);
+             if (button) {
+                 button.classList.add('active:scale-100', 'ring-2', 'ring-offset-2', 'ring-sky-500'); // Add temporary active style
+                 setTimeout(() => button.classList.remove('active:scale-100', 'ring-2', 'ring-offset-2', 'ring-sky-500'), 150);
+             }
+        }
+
+         function findButtonForKey(key) {
+            if (key >= 0 && key <= 9) return document.querySelector(`[data-num="${key}"]`);
+            if (key === '.') return decimalButton;
+            if (key === '+' || key === '-' || key === '*' || key === '/') return document.querySelector(`[data-op="${key}"]`);
+            if (key === 'Enter' || key === '=') return equalsButton;
+            if (key === 'Backspace') return backspaceButton;
+            if (key === 'Escape' || key.toLowerCase() === 'c') return clearButton;
+            return null;
+        }
+
+
+        // --- Initial Setup ---
+        updateDisplay(); // Initialize display with 0
+
+    </script>
+
+</body>
+</html>
